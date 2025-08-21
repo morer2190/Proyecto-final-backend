@@ -42,7 +42,7 @@ class EstadoReservacion(Enum):
 class TipoProveedor(Enum):
     Hotel = 1
     Tour = 2
-    Agencia = 3
+    Vuelo = 3
     RentaVehiculo = 4
 
 class Usuario(db.Model):
