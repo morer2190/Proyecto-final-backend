@@ -1,6 +1,6 @@
 # Proyecto Final Backend
 
-Este proyecto es una API RESTful construida con Flask y SQLAlchemy para la gestión de usuarios, proveedores, cotizaciones y reservaciones.
+API RESTful desarrollada con Flask y SQLAlchemy para la gestión de usuarios, proveedores, cotizaciones y reservaciones.
 
 ## Requisitos
 
@@ -9,50 +9,66 @@ Este proyecto es una API RESTful construida con Flask y SQLAlchemy para la gesti
 
 ## Instalación
 
-1. **Clona el repositorio o descarga los archivos del proyecto.**
+1. Clonar el repositorio o descargar los archivos del proyecto.
 
-2. **Instala las dependencias:**
-
-   Abre una terminal en la carpeta del proyecto y ejecuta:
+2. Instalar las dependencias ejecutando en la terminal:
    ```
    pip install -r dependencias.txt
    ```
 
-3. **Configura las variables de entorno:**
-
-   Crea un archivo `.env` en la raíz del proyecto con el siguiente contenido (ajusta los valores según tu configuración de MySQL):
+3. Crear el archivo `.env` en la raíz del proyecto con el siguiente contenido (ajustar valores según la configuración de MySQL):
 
    ```
-   DB_USER=tu_usuario_mysql
-   DB_PASSWORD=tu_contraseña_mysql
+   DB_USER=usuario_mysql
+   DB_PASSWORD=contraseña_mysql
+   JWT_SECRET_KEY=clave_secreta_jwt
    ```
 
-4. **Configura la base de datos:**
-
-   Asegúrate de tener una base de datos creada en MySQL llamada `default` o cambia el nombre en la cadena de conexión dentro de `App.py`:
+4. La base de datos debe existir en MySQL con el nombre `default` o modificar el nombre en la cadena de conexión en `app.py`:
    ```python
    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+mysqlconnector://usuario:contraseña@localhost/default?auth_plugin=caching_sha2_password'
    ```
 
-5. **Inicializa las tablas:**
-
-   Al ejecutar la aplicación por primera vez, las tablas se crearán automáticamente si no existen.
+5. Las tablas se inicializan automáticamente al ejecutar la aplicación si no existen.
 
 ## Ejecución
 
-En la terminal, ejecuta:
-
+Ejecutar en la terminal:
 ```
-python App.py
+python app.py
 ```
+La API queda disponible en [http://localhost:5000](http://localhost:5000).
 
-La API estará disponible en [http://localhost:5000](http://localhost:5000).
+## Cambios recientes y validaciones
+
+- Validaciones estrictas para campos obligatorios, unicidad de cédula, formato de correo electrónico y URL, y verificación de valores válidos en enums (`rol`, `tipo`, `estado`).
+- Los campos `cedula`, `contrasena` y `rol` no son actualizables mediante el endpoint PUT de usuarios.
+- Autenticación JWT requerida en endpoints protegidos, usando el header `Authorization`.
+- Filtrado por usuario en cotizaciones y reservaciones: administradores y agentes visualizan todos los registros, clientes solo los propios.
+- Asignación de valores por defecto en campos `estado` de cotizaciones y reservaciones.
+- Validación de fechas en reservaciones, asegurando formato correcto y que la fecha de fin sea posterior a la de inicio.
 
 ## Endpoints principales
 
-- `/usuarios` (GET, POST)
+- `/usuarios` (GET, POST, PUT)
 - `/proveedores` (GET, POST, PUT, DELETE)
 - `/cotizaciones` (GET, POST, PUT, DELETE)
 - `/reservaciones` (GET, POST, PUT, DELETE)
+- `/login` (POST) — autenticación y obtención de token JWT
+
+## Pruebas automatizadas
+
+La suite de pruebas se encuentra en `tests/test_app.py` y cubre la funcionalidad principal de la API:
+
+- Creación y validación de usuarios, incluyendo correo electrónico, unicidad de cédula y roles.
+- Pruebas de autenticación y obtención de tokens JWT.
+- Validación de proveedores, enlaces y acceso por roles.
+- Pruebas de cotizaciones y reservaciones, incluyendo validación de fechas, estados y filtrado por usuario autenticado.
+- Cobertura de errores y respuestas esperadas.
+
+Las pruebas se ejecutan con:
+```
+python -m unittest discover -s tests
+```
 
 ---

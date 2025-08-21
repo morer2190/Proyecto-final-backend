@@ -1,6 +1,6 @@
 import os
 import bcrypt
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Column, Integer, String, Enum as SqlEnum, Date
@@ -42,7 +42,7 @@ class EstadoReservacion(Enum):
 class TipoProveedor(Enum):
     Hotel = 1
     Tour = 2
-    Vuelo = 3
+    Agencia = 3
     RentaVehiculo = 4
 
 class Usuario(db.Model):
@@ -86,11 +86,12 @@ class Cotizacion(db.Model):
     servicio = Column(String(100), nullable=False)
     detalle = Column(String(500), nullable=False)
     estado = Column(SqlEnum(EstadoCotizacion), nullable=False)
+    id_usuario = Column(Integer, db.ForeignKey('usuario.id'), nullable=False)
     fecha_creacion = Column(Date, nullable=False, default=db.func.current_date())
     fecha_actualizacion = Column(Date, nullable=False, default=db.func.current_date())
 
     def to_dict(self):
-        return {"id": self.id, "servicio": self.servicio, "detalle": self.detalle, "estado": EstadoCotizacion(self.estado).name, "fecha_creacion": self.fecha_creacion, "fecha_actualizacion": self.fecha_actualizacion}
+        return {"id": self.id, "servicio": self.servicio, "detalle": self.detalle, "estado": EstadoCotizacion(self.estado).name, "fecha_creacion": self.fecha_creacion, "fecha_actualizacion": self.fecha_actualizacion, "id_usuario": self.id_usuario}
 
 class Reservacion(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -201,6 +202,37 @@ def crear_usuario():
     db.session.commit()
     return jsonify({"mensaje": "Usuario creado", "usuario": nuevo_usuario.to_dict()}), 201
 
+@app.route('/usuarios/<int:id>', methods=['PUT'])
+@role_required([Rol.Administrador.name])
+def actualizar_usuario(id):
+    import re
+    data = request.get_json()
+    usuario = Usuario.query.get_or_404(id)
+
+    # Validaciones de campos obligatorios
+    if 'nombre' in data and not data['nombre']:
+        return jsonify({"error": "El campo 'nombre' es obligatorio"}), 400
+    if 'correo_electronico' in data and not data['correo_electronico']:
+        return jsonify({"error": "El campo 'correo_electronico' es obligatorio"}), 400
+
+    # Validación de correo electrónico con regex
+    if 'correo_electronico' in data:
+        email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+        if not re.match(email_regex, data['correo_electronico']):
+            return jsonify({"error": "El correo electrónico no es válido"}), 400
+        usuario.correo_electronico = data['correo_electronico']
+
+    # La cédula, la contraseña y el rol no son actualizables
+    # if 'cedula' in data: (no update allowed)
+    # if 'contrasena' in data: (no update allowed)
+    # if 'rol' in data: (no update allowed)
+
+    if 'nombre' in data and data['nombre']:
+        usuario.nombre = data['nombre']
+
+    db.session.commit()
+    return jsonify(usuario.to_dict())
+
 # --- CRUD Proveedor ---
 @app.route('/proveedores', methods=['GET'])
 @role_required([Rol.Administrador.name])  # Solo permite acceso a usuarios con rol Administrador
@@ -293,9 +325,19 @@ def eliminar_proveedor(id):
 
 # --- CRUD Cotizacion ---
 @app.route('/cotizaciones', methods=['GET'])
-@role_required([Rol.Administrador.name, Rol.Agente.name])
+@role_required([Rol.Administrador.name, Rol.Agente.name, Rol.Cliente.name])
 def obtener_cotizaciones():
-    cotizaciones = Cotizacion.query.all()
+    claims = get_jwt()
+    user_email = get_jwt_identity()
+
+    if claims.get("role") in [Rol.Administrador.name, Rol.Agente.name]:
+        cotizaciones = Cotizacion.query.all()
+    else:
+        usuario = Usuario.query.filter_by(correo_electronico=user_email).first()
+        if not usuario:
+            return jsonify([])  # o un error si prefieres
+        cotizaciones = Cotizacion.query.filter_by(id_usuario=usuario.id).all()
+
     return jsonify([c.to_dict() for c in cotizaciones])
 
 @app.route('/cotizaciones', methods=['POST'])
@@ -307,13 +349,14 @@ def crear_cotizacion():
         return jsonify({"error": "El campo 'servicio' es obligatorio"}), 400
     if not data.get('detalle'):
         return jsonify({"error": "El campo 'detalle' es obligatorio"}), 400
-
-    # Estado por defecto: Pendiente
+    if not data.get('id_usuario'):
+        return jsonify({"error": "El campo 'id_usuario' es obligatorio"}), 400
 
     nueva = Cotizacion(
         servicio=data['servicio'],
         detalle=data['detalle'],
         estado=EstadoCotizacion.Pendiente.name,  # Estado por defecto
+        id_usuario=data['id_usuario']
     )
     db.session.add(nueva)
     db.session.commit()
@@ -362,9 +405,19 @@ def eliminar_cotizacion(id):
 
 # --- CRUD Reservacion ---
 @app.route('/reservaciones', methods=['GET'])
-@role_required([Rol.Administrador.name, Rol.Agente.name])
+@role_required([Rol.Administrador.name, Rol.Agente.name, Rol.Cliente.name])
 def obtener_reservaciones():
-    reservaciones = Reservacion.query.all()
+    claims = get_jwt()
+    user_email = get_jwt_identity()
+
+    if claims.get("role") in [Rol.Administrador.name, Rol.Agente.name]:
+        reservaciones = Reservacion.query.all()
+    else:
+        usuario = Usuario.query.filter_by(correo_electronico=user_email).first()
+        if not usuario:
+            return jsonify([])  # o un error si prefieres
+        reservaciones = Reservacion.query.filter_by(id_usuario=usuario.id).all()
+
     return jsonify([r.to_dict() for r in reservaciones])
 
 @app.route('/reservaciones', methods=['POST'])
@@ -478,4 +531,3 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(port=5000, debug=True)           # Iniciar servidor en puerto 5000
-
