@@ -52,6 +52,8 @@ class Usuario(db.Model):
     correo_electronico = Column(String(100))
     hash_contrasena = Column(String(100))
     rol = Column(SqlEnum(Rol), default=Rol.Cliente)
+    fecha_creacion = Column(Date, nullable=False, default=db.func.current_date())
+    fecha_actualizacion = Column(Date, nullable=False, default=db.func.current_date())
 
      # Método para setear la contraseña
     def set_password(self, password: str):
@@ -63,7 +65,7 @@ class Usuario(db.Model):
         return bcrypt.checkpw(password.encode("utf-8"), self.hash_contrasena.encode("utf-8"))
 
     def to_dict(self):
-        return {"id": self.id, "nombre": self.nombre, "cedula": self.cedula, "correo_electronico": self.correo_electronico, "rol": self.get_rol_name() }
+        return {"id": self.id, "nombre": self.nombre, "cedula": self.cedula, "correo_electronico": self.correo_electronico, "rol": self.get_rol_name(), "fecha_creacion": self.fecha_creacion, "fecha_actualizacion": self.fecha_actualizacion}
     
     def get_rol_name(self):
         return self.rol.name if self.rol else None
@@ -73,18 +75,22 @@ class Proveedor(db.Model):
     nombre = Column(String(200))
     tipo = Column(SqlEnum(TipoProveedor))
     enlace = Column(String(500))
+    fecha_creacion = Column(Date, nullable=False, default=db.func.current_date())
+    fecha_actualizacion = Column(Date, nullable=False, default=db.func.current_date())
 
     def to_dict(self):
-        return {"id": self.id, "nombre": self.nombre, "tipo":  TipoProveedor(self.tipo).name, "enlace": self.enlace }
+        return {"id": self.id, "nombre": self.nombre, "tipo":  TipoProveedor(self.tipo).name, "enlace": self.enlace, "fecha_creacion": self.fecha_creacion, "fecha_actualizacion": self.fecha_actualizacion}
 
 class Cotizacion(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
     servicio = Column(String(100), nullable=False)
     detalle = Column(String(500), nullable=False)
     estado = Column(SqlEnum(EstadoCotizacion), nullable=False)
+    fecha_creacion = Column(Date, nullable=False, default=db.func.current_date())
+    fecha_actualizacion = Column(Date, nullable=False, default=db.func.current_date())
 
     def to_dict(self):
-        return {"id": self.id, "servicio": self.servicio, "detalle": self.detalle, "estado": EstadoCotizacion(self.estado).name }
+        return {"id": self.id, "servicio": self.servicio, "detalle": self.detalle, "estado": EstadoCotizacion(self.estado).name, "fecha_creacion": self.fecha_creacion, "fecha_actualizacion": self.fecha_actualizacion}
 
 class Reservacion(db.Model):
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -95,6 +101,8 @@ class Reservacion(db.Model):
     id_usuario = Column(Integer, db.ForeignKey('usuario.id'), nullable=False)
     # Opcional: relación para acceder al usuario desde la reservación
     usuario = db.relationship('Usuario', backref='reservaciones')
+    fecha_creacion = Column(Date, nullable=False, default=db.func.current_date())
+    fecha_actualizacion = Column(Date, nullable=False, default=db.func.current_date())
 
     def to_dict(self):
         return {
@@ -103,7 +111,9 @@ class Reservacion(db.Model):
             "fecha_fin": self.fecha_fin,
             "detalle": self.detalle,
             "estado": EstadoReservacion(self.estado).name,
-            "id_usuario": self.id_usuario
+            "id_usuario": self.id_usuario,
+            "fecha_creacion": self.fecha_creacion,
+            "fecha_actualizacion": self.fecha_actualizacion
         }
 
 # Ruta GET para la raíz ("/")
@@ -155,10 +165,28 @@ def crear_usuario():
         return jsonify({"error": "El campo 'contrasena' es obligatorio"}), 400
     if not data.get('correo_electronico'):
         return jsonify({"error": "El campo 'correo_electronico' es obligatorio"}), 400
+
+    # Validación de correo electrónico con regex
+    import re
+    email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+    if not re.match(email_regex, data['correo_electronico']):
+        return jsonify({"error": "El correo electrónico no es válido"}), 400
+
+    # Validación de unicidad de cedula
+    if Usuario.query.filter_by(cedula=data['cedula']).first():
+        return jsonify({"error": "La cédula ya está registrada"}), 400
+
+    # Validación de rol
     rol_value = data['rol']
+    valid_roles = [r.name for r in Rol]
     if isinstance(rol_value, int):
-        rol_enum = Rol(rol_value)
+        try:
+            rol_enum = Rol(rol_value)
+        except ValueError:
+            return jsonify({"error": f"El rol '{rol_value}' no es válido"}), 400
     else:
+        if rol_value not in valid_roles:
+            return jsonify({"error": f"El rol '{rol_value}' no es válido"}), 400
         rol_enum = Rol[rol_value]
   
     nuevo_usuario = Usuario(
@@ -168,7 +196,6 @@ def crear_usuario():
         rol=rol_enum
     )
     nuevo_usuario.set_password(data.get('contrasena'))
-
 
     db.session.add(nuevo_usuario)
     db.session.commit()
@@ -188,8 +215,28 @@ def crear_proveedor():
     # Validación
     if not data.get('nombre'):
         return jsonify({"error": "El campo 'nombre' es obligatorio"}), 400
-    tipo = data['tipo']
-    tipo_enum = TipoProveedor(tipo) if isinstance(tipo, int) else TipoProveedor[tipo]
+    if not data.get('enlace'):
+        return jsonify({"error": "El campo 'enlace' es obligatorio"}), 400
+
+    # Validación de enlace como URL con regex
+    import re
+    url_regex = r"^(https?://)?([\w\-]+\.)+[\w\-]+(/[^\sß]*)?$"
+    if not re.match(url_regex, data['enlace']):
+        return jsonify({"error": "El campo 'enlace' debe ser una URL válida"}), 400
+
+    # Validación de tipo proveedor
+    tipo_value = data.get('tipo')
+    valid_tipos = [t.name for t in TipoProveedor]
+    if isinstance(tipo_value, int):
+        try:
+            tipo_enum = TipoProveedor(tipo_value)
+        except ValueError:
+            return jsonify({"error": f"El tipo '{tipo_value}' no es válido"}), 400
+    else:
+        if tipo_value not in valid_tipos:
+            return jsonify({"error": f"El tipo '{tipo_value}' no es válido"}), 400
+        tipo_enum = TipoProveedor[tipo_value]
+
     nuevo = Proveedor(nombre=data['nombre'], tipo=tipo_enum, enlace=data['enlace'])
     db.session.add(nuevo)
     db.session.commit()
@@ -200,11 +247,39 @@ def crear_proveedor():
 def actualizar_proveedor(id):
     data = request.get_json()
     proveedor = Proveedor.query.get_or_404(id)
-    proveedor.nombre = data.get('nombre', proveedor.nombre)
+
+    # Validación de nombre
+    if 'nombre' in data and not data['nombre']:
+        return jsonify({"error": "El campo 'nombre' es obligatorio"}), 400
+
+    # Validación de enlace como URL con regex
+    if 'enlace' in data:
+        if not data['enlace']:
+            return jsonify({"error": "El campo 'enlace' es obligatorio"}), 400
+        import re
+        url_regex = r"^(https?://)?([\w\-]+\.)+[\w\-]+(/[^\sß]*)?$"
+        if not re.match(url_regex, data['enlace']):
+            return jsonify({"error": "El campo 'enlace' debe ser una URL válida"}), 400
+        proveedor.enlace = data['enlace']
+
+    # Validación de tipo proveedor
     if 'tipo' in data:
-        tipo = data['tipo']
-        proveedor.tipo = TipoProveedor(tipo) if isinstance(tipo, int) else TipoProveedor[tipo]
-    proveedor.enlace = data.get('enlace', proveedor.enlace)
+        tipo_value = data['tipo']
+        valid_tipos = [t.name for t in TipoProveedor]
+        if isinstance(tipo_value, int):
+            try:
+                tipo_enum = TipoProveedor(tipo_value)
+            except ValueError:
+                return jsonify({"error": f"El tipo '{tipo_value}' no es válido"}), 400
+        else:
+            if tipo_value not in valid_tipos:
+                return jsonify({"error": f"El tipo '{tipo_value}' no es válido"}), 400
+            tipo_enum = TipoProveedor[tipo_value]
+        proveedor.tipo = tipo_enum
+
+    if 'nombre' in data and data['nombre']:
+        proveedor.nombre = data['nombre']
+
     db.session.commit()
     return jsonify(proveedor.to_dict())
 
@@ -224,12 +299,22 @@ def obtener_cotizaciones():
     return jsonify([c.to_dict() for c in cotizaciones])
 
 @app.route('/cotizaciones', methods=['POST'])
-@role_required([Rol.Administrador.name, Rol.Agente.name])
+@role_required([Rol.Administrador.name, Rol.Cliente.name, Rol.Agente.name])
 def crear_cotizacion():
     data = request.get_json()
-    estado = data['estado']
-    estado_enum = EstadoCotizacion(estado) if isinstance(estado, int) else EstadoCotizacion[estado]
-    nueva = Cotizacion(servicio=data['servicio'], detalle=data['detalle'], estado=estado_enum)
+    # Validaciones de campos obligatorios
+    if not data.get('servicio'):
+        return jsonify({"error": "El campo 'servicio' es obligatorio"}), 400
+    if not data.get('detalle'):
+        return jsonify({"error": "El campo 'detalle' es obligatorio"}), 400
+
+    # Estado por defecto: Pendiente
+
+    nueva = Cotizacion(
+        servicio=data['servicio'],
+        detalle=data['detalle'],
+        estado=EstadoCotizacion.Pendiente.name,  # Estado por defecto
+    )
     db.session.add(nueva)
     db.session.commit()
     return jsonify({"mensaje": "Cotización creada", "cotizacion": nueva.to_dict()}), 201
@@ -239,11 +324,31 @@ def crear_cotizacion():
 def actualizar_cotizacion(id):
     data = request.get_json()
     cotizacion = Cotizacion.query.get_or_404(id)
-    cotizacion.servicio = data.get('servicio', cotizacion.servicio)
-    cotizacion.detalle = data.get('detalle', cotizacion.detalle)
-    if 'estado' in data:
-        estado = data['estado']
-        cotizacion.estado = EstadoCotizacion(estado) if isinstance(estado, int) else EstadoCotizacion[estado]
+
+    # Validaciones de campos obligatorios
+    if not data.get('servicio'):
+        return jsonify({"error": "El campo 'servicio' es obligatorio"}), 400
+    if not data.get('detalle'):
+        return jsonify({"error": "El campo 'detalle' es obligatorio"}), 400
+    if not data.get('estado'):
+        return jsonify({"error": "El campo 'estado' es obligatorio"}), 400
+
+    estado_value = data['estado']
+    valid_estados = [e.name for e in EstadoCotizacion]
+    if isinstance(estado_value, int):
+        try:
+            estado_enum = EstadoCotizacion(estado_value)
+        except ValueError:
+            return jsonify({"error": f"El estado '{estado_value}' no es válido"}), 400
+    else:
+        if estado_value not in valid_estados:
+            return jsonify({"error": f"El estado '{estado_value}' no es válido"}), 400
+        estado_enum = EstadoCotizacion[estado_value]
+
+    cotizacion.servicio = data['servicio']
+    cotizacion.detalle = data['detalle']
+    cotizacion.estado = estado_enum
+
     db.session.commit()
     return jsonify(cotizacion.to_dict())
 
@@ -265,14 +370,39 @@ def obtener_reservaciones():
 @app.route('/reservaciones', methods=['POST'])
 @role_required([Rol.Administrador.name, Rol.Agente.name])
 def crear_reservacion():
+    from datetime import datetime
+
     data = request.get_json()
-    estado = data.get('estado', EstadoReservacion.Confirmada.name)
-    estado_enum = EstadoReservacion(estado) if isinstance(estado, int) else EstadoReservacion[estado]
+
+    # Validaciones de campos obligatorios
+    if not data.get('fecha_inicio'):
+        return jsonify({"error": "El campo 'fecha_inicio' es obligatorio"}), 400
+    if not data.get('fecha_fin'):
+        return jsonify({"error": "El campo 'fecha_fin' es obligatorio"}), 400
+    if not data.get('detalle'):
+        return jsonify({"error": "El campo 'detalle' es obligatorio"}), 400
+    if not data.get('id_usuario'):
+        return jsonify({"error": "El campo 'id_usuario' es obligatorio"}), 400
+
+    # Validación de fechas
+    try:
+        fecha_inicio = datetime.strptime(data['fecha_inicio'], "%Y-%m-%d").date()
+    except Exception:
+        return jsonify({"error": "El campo 'fecha_inicio' debe tener formato YYYY-MM-DD"}), 400
+
+    try:
+        fecha_fin = datetime.strptime(data['fecha_fin'], "%Y-%m-%d").date()
+    except Exception:
+        return jsonify({"error": "El campo 'fecha_fin' debe tener formato YYYY-MM-DD"}), 400
+
+    if fecha_fin <= fecha_inicio:
+        return jsonify({"error": "La fecha de fin debe ser posterior a la fecha de inicio"}), 400
+
     nueva = Reservacion(
-        fecha_inicio=data['fecha_inicio'],
-        fecha_fin=data['fecha_fin'],
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
         detalle=data['detalle'],
-        estado=estado_enum,
+        estado=EstadoReservacion.Confirmada.name,  # Estado por defecto
         id_usuario=data['id_usuario']
     )
     db.session.add(nueva)
@@ -282,16 +412,56 @@ def crear_reservacion():
 @app.route('/reservaciones/<int:id>', methods=['PUT'])
 @role_required([Rol.Administrador.name, Rol.Agente.name])
 def actualizar_reservacion(id):
+    from datetime import datetime
+
     data = request.get_json()
     reservacion = Reservacion.query.get_or_404(id)
-    reservacion.fecha_inicio = data.get('fecha_inicio', reservacion.fecha_inicio)
-    reservacion.fecha_fin = data.get('fecha_fin', reservacion.fecha_fin)
-    reservacion.detalle = data.get('detalle', reservacion.detalle)
-    if 'estado' in data:
-        estado = data['estado']
-        reservacion.estado = EstadoReservacion(estado) if isinstance(estado, int) else EstadoReservacion[estado]
-    if 'id_usuario' in data:
-        reservacion.id_usuario = data['id_usuario']
+
+    # Validaciones de campos obligatorios
+    if not data.get('fecha_inicio'):
+        return jsonify({"error": "El campo 'fecha_inicio' es obligatorio"}), 400
+    if not data.get('fecha_fin'):
+        return jsonify({"error": "El campo 'fecha_fin' es obligatorio"}), 400
+    if not data.get('detalle'):
+        return jsonify({"error": "El campo 'detalle' es obligatorio"}), 400
+    if not data.get('id_usuario'):
+        return jsonify({"error": "El campo 'id_usuario' es obligatorio"}), 400
+    if not data.get('estado'):
+        return jsonify({"error": "El campo 'estado' es obligatorio"}), 400
+
+    # Validación de fechas
+    try:
+        fecha_inicio = datetime.strptime(data['fecha_inicio'], "%Y-%m-%d").date()
+    except Exception:
+        return jsonify({"error": "El campo 'fecha_inicio' debe tener formato YYYY-MM-DD"}), 400
+
+    try:
+        fecha_fin = datetime.strptime(data['fecha_fin'], "%Y-%m-%d").date()
+    except Exception:
+        return jsonify({"error": "El campo 'fecha_fin' debe tener formato YYYY-MM-DD"}), 400
+
+    if fecha_fin <= fecha_inicio:
+        return jsonify({"error": "La fecha de fin debe ser posterior a la fecha de inicio"}), 400
+
+    # Validación de estado
+    estado_value = data['estado']
+    valid_estados = [e.name for e in EstadoReservacion]
+    if isinstance(estado_value, int):
+        try:
+            estado_enum = EstadoReservacion(estado_value)
+        except ValueError:
+            return jsonify({"error": f"El estado '{estado_value}' no es válido"}), 400
+    else:
+        if estado_value not in valid_estados:
+            return jsonify({"error": f"El estado '{estado_value}' no es válido"}), 400
+        estado_enum = EstadoReservacion[estado_value]
+
+    reservacion.fecha_inicio = fecha_inicio
+    reservacion.fecha_fin = fecha_fin
+    reservacion.detalle = data['detalle']
+    reservacion.estado = estado_enum
+    reservacion.id_usuario = data['id_usuario']
+
     db.session.commit()
     return jsonify(reservacion.to_dict())
 

@@ -1,5 +1,6 @@
 Flask
 Flask-SQLAlchemy
+Flask-restx
 python-dotenv
 mysql-connector-python
 bcrypt
