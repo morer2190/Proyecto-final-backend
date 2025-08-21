@@ -5,4 +5,3 @@ python-dotenv
 mysql-connector-python
 bcrypt
 Flask-JWT-Extended
-pytest

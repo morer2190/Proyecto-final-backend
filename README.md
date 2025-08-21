@@ -56,19 +56,4 @@ La API queda disponible en [http://localhost:5000](http://localhost:5000).
 - `/reservaciones` (GET, POST, PUT, DELETE)
 - `/login` (POST) — autenticación y obtención de token JWT
 
-## Pruebas automatizadas
-
-La suite de pruebas se encuentra en `tests/test_app.py` y cubre la funcionalidad principal de la API:
-
-- Creación y validación de usuarios, incluyendo correo electrónico, unicidad de cédula y roles.
-- Pruebas de autenticación y obtención de tokens JWT.
-- Validación de proveedores, enlaces y acceso por roles.
-- Pruebas de cotizaciones y reservaciones, incluyendo validación de fechas, estados y filtrado por usuario autenticado.
-- Cobertura de errores y respuestas esperadas.
-
-Las pruebas se ejecutan con:
-```
-python -m unittest discover -s tests
-```
-
 ---
